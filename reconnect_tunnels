@@ -80,10 +80,11 @@ else
         printf "#### INFO: %i tunnels to connect\n" "${#tunnels[@]}" >&2
     fi
     printf 'ssh %s ' "$ssh_opts"
+    tunnels+=($PORT_VNC)
     for fw in "${tunnels[@]}"; do
         printf -- '-L %s:localhost:%s ' "$fw" "$fw"
     done
-    printf 'biowulf.nih.gov\n'
+    echo $USER@biowulf.nih.gov
 fi
 
 
