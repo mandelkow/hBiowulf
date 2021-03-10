@@ -1,0 +1,89 @@
+#! /bin/bash
+#>NAME
+#>    reconnect_tunnels - Make reconnecting existing tunnels easier
+#>SYNOPSIS
+#>    reconnect_tunnels [--list] [--ssh-options '...']
+#>DESCRIPTION
+#>    By default returns an ssh command that can be used to
+#>    reconnect tunnels from your local workstation to
+#>    biowulf for current interactive jobs with tunnels.
+#>OPTIONS
+#>    --list         return list of ports
+#>    --ssh-options  Additional ssh options to include in the returned
+#>                   ssh command. Options must be provided as a quoted
+#>                   string
+#>    --help         display this help message
+
+
+function fail() {
+    echo "$@" >&2
+    exit 1
+}
+
+function usage() {
+    grep -E '^#>' "$0" | sed 's/^#>//'
+}
+
+
+list=false
+ssh_opts=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --list) 
+            list=true; 
+            shift
+            ;;
+        --ssh-options) 
+            ssh_opts="$2"
+            shift 2
+            ;;
+        --help) 
+            usage; 
+            exit 0
+            ;;
+        *)
+            printf "ERROR: Unknown option: '%s'\n" "$1" >&2
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+state_dir="${XDG_DATA_HOME:-$HOME/.local/share}/slurm_jobs"
+readarray -t tunnel_files < <(ls "${state_dir}/"*.tunnel 2> /dev/null)
+
+# clean up stale .tunnel files
+if [[ ${#tunnel_files[@]} -gt 0 ]]; then
+    if jobs="$(squeue -u "${USER}" -p persist,interactive -o "%20i" --noheader)"; then
+        for tf in "${tunnel_files[@]}"; do
+            jobid="$(basename "${tf}" .tunnel)"
+            if [[ ! ("${jobs}" =~ ${jobid}) ]]; then
+                rm -f "${tf}"
+            fi
+        done
+    fi
+fi
+
+readarray -t tunnels < <(cat "${state_dir}/"*.tunnel 2> /dev/null | sort)
+
+if $list; then
+    if [[ ${#tunnels[@]} -eq 0 ]]; then
+        printf "#### WARNING: No tunnels set up\n" >&2
+    else
+        printf "#### INFO: %i tunnels to connect\n" "${#tunnels[@]}" >&2
+        printf "%s\n" "${tunnels[@]}"
+    fi
+else
+    if [[ ${#tunnels[@]} -eq 0 ]]; then
+        printf "#### WARNING: No tunnels set up\n" >&2
+    else
+        printf "#### INFO: %i tunnels to connect\n" "${#tunnels[@]}" >&2
+    fi
+    printf 'ssh %s ' "$ssh_opts"
+    for fw in "${tunnels[@]}"; do
+        printf -- '-L %s:localhost:%s ' "$fw" "$fw"
+    done
+    printf 'biowulf.nih.gov\n'
+fi
+
+
